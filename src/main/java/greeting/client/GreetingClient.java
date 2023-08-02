@@ -1,120 +1,57 @@
 package greeting.client;
 
-import com.proto.greeting.*;
-import io.grpc.*;
-import io.grpc.stub.StreamObserver;
+import com.proto.greeting.GreetingRequest;
+import com.proto.greeting.GreetingResponse;
+import com.proto.greeting.GreetingServiceGrpc;
+import io.grpc.ManagedChannel;
+import io.grpc.ManagedChannelBuilder;
+import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
+import io.opentelemetry.context.Scope;
+import io.opentelemetry.context.propagation.ContextPropagators;
+import io.opentelemetry.exporter.otlp.trace.OtlpGrpcSpanExporter;
+import io.opentelemetry.sdk.OpenTelemetrySdk;
+import io.opentelemetry.sdk.resources.Resource;
+import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
+import io.opentelemetry.semconv.resource.attributes.ResourceAttributes;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.util.Arrays;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 public final class GreetingClient {
+    private static Logger logger = LoggerFactory.getLogger(GreetingClient.class);
     private static void doGreet(ManagedChannel channel) {
-        System.out.println("Enter doGreet");
-        GreetingServiceGrpc.GreetingServiceBlockingStub stub = GreetingServiceGrpc.newBlockingStub(channel);
-        GreetingResponse response = stub.greet(GreetingRequest.newBuilder().setFirstName("Clement").build());
+            Tracer tracer = GlobalOpenTelemetry.getTracer("Greeter", "1.0.0");
+            Span span = tracer.spanBuilder("GreetingClient").startSpan();
+            try (Scope ss = span.makeCurrent()) {
+                GreetingServiceGrpc.GreetingServiceBlockingStub stub = GreetingServiceGrpc.newBlockingStub(channel);
+                GreetingResponse response = stub.greet(GreetingRequest.newBuilder().setFirstName("Clement").build());
 
-        System.out.println("Greeting: " + response.getResult());
-    }
-
-    private static void doGreetManyTimes(ManagedChannel channel) {
-        System.out.println("Enter doGreetManyTimes");
-        GreetingServiceGrpc.GreetingServiceBlockingStub stub = GreetingServiceGrpc.newBlockingStub(channel);
-
-        stub.greetManyTimes(GreetingRequest.newBuilder().setFirstName("Clement").build()).forEachRemaining(response ->
-            System.out.println(response.getResult())
-        );
-    }
-
-    private static void doLongGreet(ManagedChannel channel) throws InterruptedException {
-        System.out.println("Enter doLongGreet");
-        GreetingServiceGrpc.GreetingServiceStub stub = GreetingServiceGrpc.newStub(channel);
-        CountDownLatch latch = new CountDownLatch(1);
-
-        StreamObserver<GreetingRequest> stream = stub.longGreet(new StreamObserver<GreetingResponse>() {
-            @Override
-            public void onNext(GreetingResponse response) {
-                System.out.println(response.getResult());
+                logger.info("Greeting: " + response.getResult());
+            } finally {
+                span.end();
             }
-
-            @Override
-            public void onError(Throwable t) {}
-
-            @Override
-            public void onCompleted() {
-                latch.countDown();
-            }
-        });
-
-        Arrays.asList("Clement", "Marie", "Test").forEach(name ->
-            stream.onNext(GreetingRequest.newBuilder().setFirstName(name).build())
-        );
-
-        stream.onCompleted();
-
-        //noinspection ResultOfMethodCallIgnored
-        latch.await(3, TimeUnit.SECONDS);
-    }
-
-    private static void doGreetEveryone(ManagedChannel channel) throws InterruptedException {
-        System.out.println("Enter doGreetEveryone");
-        GreetingServiceGrpc.GreetingServiceStub stub = GreetingServiceGrpc.newStub(channel);
-        CountDownLatch latch = new CountDownLatch(1);
-
-        StreamObserver<GreetingRequest> stream = stub.greetEveryone(new StreamObserver<GreetingResponse>() {
-            @Override
-            public void onNext(GreetingResponse response) {
-                System.out.println(response.getResult());
-            }
-
-            @Override
-            public void onError(Throwable t) {}
-
-            @Override
-            public void onCompleted() {
-                latch.countDown();
-            }
-        });
-
-        Arrays.asList("Clement", "Marie", "Test").forEach(name ->
-            stream.onNext(GreetingRequest.newBuilder().setFirstName(name).build())
-        );
-
-        stream.onCompleted();
-
-        //noinspection ResultOfMethodCallIgnored
-        latch.await(3, TimeUnit.SECONDS);
-    }
-
-    private static void doGreetWithDeadline(ManagedChannel channel) {
-        System.out.println("Enter doGreetWithDeadline");
-        GreetingServiceGrpc.GreetingServiceBlockingStub stub = GreetingServiceGrpc.newBlockingStub(channel);
-        GreetingRequest request = GreetingRequest.newBuilder().setFirstName("Clement").build();
-        GreetingResponse response = stub.withDeadline(Deadline.after(3, TimeUnit.SECONDS))
-                .greetWithDeadline(request);
-
-        System.out.println("Greeting within deadline: " + response.getResult());
-
-        try {
-            response = stub.withDeadline(Deadline.after(100, TimeUnit.MILLISECONDS))
-                    .greetWithDeadline(request);
-
-            System.out.println("Greeting deadline exceeded: " + response.getResult());
-        } catch (StatusRuntimeException e) {
-            if (e.getStatus().getCode() == Status.Code.DEADLINE_EXCEEDED) {
-                System.out.println("Deadline has been exceeded");
-            } else {
-                System.out.println("Got an exception in greetWithDeadline");
-                e.printStackTrace();
-            }
-        }
     }
 
     public static void main(String[] args) throws InterruptedException {
-        if (args.length == 0) {
-            System.out.println("Need one argument to work");
-            return;
-        }
+        Resource resource = Resource.getDefault()
+                .merge(Resource.create(Attributes.of(ResourceAttributes.SERVICE_NAME, "GreeterProtobufExampleApp")));
+
+        SdkTracerProvider sdkTracerProvider = SdkTracerProvider.builder()
+                .addSpanProcessor(SimpleSpanProcessor.create(OtlpGrpcSpanExporter.builder().setTimeout(0,TimeUnit.SECONDS).build()))
+                .setResource(resource)
+                .build();
+
+        OpenTelemetry openTelemetry = OpenTelemetrySdk.builder()
+                .setTracerProvider(sdkTracerProvider)
+                .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
+                .buildAndRegisterGlobal();
 
         ManagedChannel channel = ManagedChannelBuilder
                 .forAddress("localhost", 50051)
@@ -123,16 +60,13 @@ public final class GreetingClient {
                 .usePlaintext()
                 .build();
 
-        switch (args[0]) {
-            case "greet": doGreet(channel); break;
-            case "greet_many_times": doGreetManyTimes(channel); break;
-            case "greet_long": doLongGreet(channel); break;
-            case "greet_everyone": doGreetEveryone(channel); break;
-            case "greet_with_deadline": doGreetWithDeadline(channel); break;
-            default: System.out.println("Keyword Invalid: " + args[0]);
-        }
+        doGreet(channel);
 
-        System.out.println("Shutting Down");
         channel.shutdown();
+
+        // Todo: Find a way to flush Spans before exiting
+        logger.info("Wait a little for Span to drain out...");
+        Thread.sleep(4000);
+        logger.info("Shutting Down");
     }
 }
