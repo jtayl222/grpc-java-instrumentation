@@ -9,6 +9,11 @@ Instead, the Context should be propagated using gRPC interceptors which allow th
 Client:
 
 ```java
+import io.opentelemetry.instrumentation.grpc.v1_6.GrpcTelemetry;
+
+        GrpcTelemetry grpcTelemetry = GrpcTelemetry.create(openTelemetry);
+
+        # https://github.com/grpc/grpc-java/blob/master/api/src/main/java/io/grpc/ManagedChannelBuilder.java
         ManagedChannel channel = ManagedChannelBuilder
                 .forAddress("localhost", 50051)
                 .intercept(grpcTelemetry.newClientInterceptor())
@@ -17,6 +22,11 @@ Client:
 
 Server:
 ```java
+import io.opentelemetry.instrumentation.grpc.v1_6.GrpcTelemetry;
+
+        GrpcTelemetry grpcTelemetry = GrpcTelemetry.create(openTelemetry);
+
+        # https://github.com/grpc/grpc-java/blob/master/api/src/main/java/io/grpc/ServerBuilder.java
         Server server = ServerBuilder.forPort(port)
             .intercept(grpcTelemetry.newServerInterceptor())
             .build();
