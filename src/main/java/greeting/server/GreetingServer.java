@@ -1,6 +1,6 @@
 package greeting.server;
 
-import greeting.client.GreetingClient;
+import io.opentelemetry.instrumentation.grpc.v1_6.GrpcTelemetry;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.protobuf.services.ProtoReflectionService;
@@ -40,11 +40,14 @@ public final class GreetingServer {
                 .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
                 .buildAndRegisterGlobal();
 
+        GrpcTelemetry grpcTelemetry = GrpcTelemetry.create(openTelemetry);
+
         Server server = ServerBuilder.forPort(port)
             .addService(new GreetingServiceImpl(new SleeperImpl()))
             .addService(ProtoReflectionService.newInstance())
             .intercept(new LogInterceptor())
             .intercept(new HeaderCheckInterceptor())
+            .intercept(grpcTelemetry.newServerInterceptor())
             .build();
 
         server.start();

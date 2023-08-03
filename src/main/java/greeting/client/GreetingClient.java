@@ -1,5 +1,6 @@
 package greeting.client;
 
+import io.opentelemetry.instrumentation.grpc.v1_6.GrpcTelemetry;
 import com.proto.greeting.GreetingRequest;
 import com.proto.greeting.GreetingResponse;
 import com.proto.greeting.GreetingServiceGrpc;
@@ -53,10 +54,13 @@ public final class GreetingClient {
                 .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
                 .buildAndRegisterGlobal();
 
+        GrpcTelemetry grpcTelemetry = GrpcTelemetry.create(openTelemetry);
+
         ManagedChannel channel = ManagedChannelBuilder
                 .forAddress("localhost", 50051)
                 .intercept(new LogInterceptor())
                 .intercept(new AddHeaderInterceptor())
+                .intercept(grpcTelemetry.newClientInterceptor())
                 .usePlaintext()
                 .build();
 
